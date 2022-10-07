@@ -62,7 +62,7 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
       buttons: [
         DialogButton(
           child: const Text(
-            "Aceptar",
+            "MP3",
             style: TextStyle(color: Colors.white, fontSize: 20),
           ),
           onPressed: () {
@@ -70,7 +70,23 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
             convertVideo(titulo, url,id_video);
 */
             _downloads.add(DownloadModel(nombre: titulo,id: id_video,progres: '0',status: 'pendiente',url: url));
-            checkList();
+            checkList('mp3');
+
+            Navigator.pop(context);
+          },
+          width: 120,
+        ),  DialogButton(
+          color: Colors.green,
+          child: const Text(
+            "MP4",
+            style: TextStyle(color: Colors.white, fontSize: 20),
+          ),
+          onPressed: () {
+/*
+            convertVideo(titulo, url,id_video);
+*/
+            _downloads.add(DownloadModel(nombre: titulo,id: id_video,progres: '0',status: 'pendiente',url: url));
+            checkList('mp4');
 
             Navigator.pop(context);
           },
@@ -81,7 +97,7 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
     notifyListeners();
   }
   //convertir video a mp3
-  Future convertVideo(titulo,id_video) async {
+  Future convertVideo(titulo,id_video,tipo) async {
     print('convierte el video');
     print('la url $id_video');
     var response = await http.get(
@@ -95,10 +111,33 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
     print('el response convertVideo ${json.decode(response.body)}');
     if (json.decode(response.body)['link'] != '') {
       setName(json.decode(response.body)['link'],
-          json.decode(response.body)['title'],id_video);
+          json.decode(response.body)['title'],id_video,tipo);
     } else {
       _timer = Timer(const Duration(seconds:3),(){
-        convertVideo(titulo,id_video);
+        convertVideo(titulo,id_video,tipo);
+
+      });
+    }
+    notifyListeners();
+  }
+  Future convertVideoToMp4(titulo,id_video,tipo) async {
+    print('convierte el video');
+    print('la url $id_video');
+    var response = await http.get(
+        Uri.parse('https://ytstream-download-youtube-videos.p.rapidapi.com/dl?id=$id_video'),
+        headers: {
+          'X-Rapidapi-Host': 'ytstream-download-youtube-videos.p.rapidapi.com',
+          'X-Rapidapi-Key': 'feb875a828mshd259781a1592f6dp13a0f1jsn843dc23adf40'
+          // 'X-Rapidapi-Key': 'feb875a828mshd259781a1592f6dp13a0f1jsn843dc23adf40' key uno
+          // 'X-Rapidapi-Key': 'fa043b5b06mshd1801dec89f4032p1721abjsn60124919a69a' key dos
+        });
+    print('el response convertVideo ${json.decode(response.body)['title']}');
+    if (json.decode(response.body)['adaptiveFormats'][0]['url'] != '') {
+      setName(json.decode(response.body)['adaptiveFormats'][0]['url'],
+          json.decode(response.body)['title'],id_video,tipo);
+    } else {
+      _timer = Timer(const Duration(seconds:3),(){
+        convertVideoToMp4(titulo,id_video,tipo);
 
       });
     }
@@ -106,12 +145,13 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
   }
 
   //poner nombre al archivo
-  setName(urlFile, titulo,id) async {
+  setName(urlFile, titulo,id,tipo) async {
     _getPathToDownload();
     final String path = await _getPathToDownload();
     print('el pathaaaaa ${path}');
     String newTitulo = titulo
         .toString()
+        .replaceAll(' ', '')
         .replaceAll(' ', '_')
         .replaceAll('"', '')
         .replaceAll("'", '')
@@ -143,10 +183,16 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
         .replaceAll('|', '');
     await crearCarpeta(path);
     newTitulo = removeDiacritics('$newTitulo');
-    String fullPath = path + "/music/${removeDiacritics('$newTitulo')}.mp3";
-    print('full path ${fullPath}');
-    download(dio, urlFile, fullPath,id);
+    if(tipo == 'mp3'){
+      String fullPath = path + "/music/${removeDiacritics('$newTitulo')}.mp3";
 
+      download(dio, urlFile, fullPath,id, tipo);
+
+    }else{
+      String fullPath = path + "/music/${removeDiacritics('$newTitulo')}.mp4";
+
+      downloadVideo(dio, urlFile, fullPath,id,tipo);
+    }
     notifyListeners();
   }
 
@@ -160,12 +206,12 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
   }
 
   //descargar archivo mp3
-  Future download(Dio dio, String url, String savePath, id_video) async {
-    print('empiemza a descargar el archivo');
+  Future download(Dio dio, String url, String savePath, id_video,tipo) async {
+    print('empiemza a descargar el archivo mp3');
     try {
       Response response = await dio.get(
         url,
-        onReceiveProgress:(received,total)=>showDownloadProgress(received, total, id_video),
+        onReceiveProgress:(received,total)=>showDownloadProgress(received, total, id_video,tipo),
         //Received data with List<int>
         options: Options(
             responseType: ResponseType.bytes,
@@ -185,8 +231,41 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
     }
   }
 
+
+  Future downloadVideo(Dio dio, String url, String path, id,tipo) async {
+    print('empiemza a descargar el archivo mp4');
+    try {
+      Response response = await dio.download(
+        url,
+        '${path}',
+          onReceiveProgress: (received, total) {
+            if (total != -1) {
+              print('el progesos $id' + (received / total * 100).toStringAsFixed(0) + "%");
+              _porcentaje = (received / total * 100).toStringAsFixed(0);
+              //final tile = _downloads.where((item) => item.id == id);
+              //tile.first.progres = _porcentaje;
+              var donw = _downloads.firstWhere((element) => element.id == id);
+              donw.progres = _porcentaje;
+
+              notifyListeners();
+              if(_porcentaje == '100'){
+                print('entra');
+                donw.status = 'descargado';
+                _porcentaje= '0';
+                checkList(tipo);
+                notifyListeners();
+
+              }
+            }
+            },
+        //Received data with List<int>
+      );
+    } catch (e) {
+      print(e);
+    }
+  }
   //ver progreso de la descarga
-  void showDownloadProgress(received, total,id) {
+  void showDownloadProgress(received, total,id,tipo) {
     if (total != -1) {
       print('el progesos $id' + (received / total * 100).toStringAsFixed(0) + "%");
       _porcentaje = (received / total * 100).toStringAsFixed(0);
@@ -200,7 +279,7 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
         print('entra');
         donw.status = 'descargado';
         _porcentaje= '0';
-        checkList();
+        checkList(tipo);
         notifyListeners();
 
       }
@@ -208,7 +287,7 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
 
   }
   //verificar si hay en espera  para pasar a la siguiente descarga
-  checkList(){
+  checkList(String tipo){
     //final down =_downloads.firstWhere((element) => element.status == 'progreso');
     //down.status = 'descargado';
     //print('se cambio');
@@ -226,7 +305,16 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
       if(down2.isNotEmpty){
         final down3 =down2.first;
         down3.status = 'progreso';
-        convertVideo(down3.nombre, down3.id);
+        if(tipo == 'mp3'){
+          print('se descargara el mp3');
+          convertVideo(down3.nombre, down3.id,tipo);
+
+        }else{
+          print('se descargara el mp4');
+
+          convertVideoToMp4(down3.nombre, down3.id,tipo);
+
+        }
         print('entra para la descarga');
       }
 
@@ -256,7 +344,7 @@ class DownloadProvider with ChangeNotifier, DiagnosticableTreeMixin {
           print('se cancela el time $titulo');
           donw.status = 'descargado';
           _timer.cancel();
-          checkList();
+         // checkList();
 
 
         }
